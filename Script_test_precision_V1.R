@@ -34,9 +34,7 @@ Sys.setlocale("LC_TIME", "C")
 # Si tableau de test d'écoute déjà disponible : passer à l'étape 5
 ######################################################################
 
-#Ici fichier de compilation des détections de 2023
-
-FullDS2024<-read.csv("Chemin_d_acces.csv", header=TRUE, sep=";")
+#Ici fichier de compilation des détections Birdnet
 FullDS2024<-read.csv("N:/tdelattre/data/TERRAIN_2024_NAS/PRINTEMPS/compilation_birdnet_s1S10.csv", header=TRUE, sep=";")
 
 
@@ -84,16 +82,15 @@ head(FullDS2024$Begin.File)   # ici : "SMU05114_20240313_112531.wav"
 # filtrer sur le nom d'espèce, en tirant aléatoirement un nombre n d'échantillons dans chaque intervalle de confiance
 
 Listen <- FullDS2024 %>%
-  filter(Common.Name == "Mésange charbonnière") %>%       #définir ici le nom d'espèce
+  filter(Common.Name == "Mésange bleue") %>%       #définir ici le nom d'espèce
   group_by(intervalle_confiance) %>%
-  slice_sample(n = 3, replace = FALSE) %>%       #définir ici le nombre de tirage aléatoire
+  slice_sample(n = 100, replace = FALSE) %>%       #définir ici le nombre de tirage aléatoire
   ungroup()
 
 #Vérification des indices de confiance
 hist(Listen$Confidence)
 
-#Si besoin, la structure que le tableau doit avoir pour que le script d'écoute fonctionne est sur le github : 
-
+#Si besoin, la structure que le tableau doit avoir pour que le script d'écoute fonctionne est sur le github : https://github.com/raphael-minguet/Script_test_precision_Birdnet/blob/main/Exemple_structure_tableau_sortie_Birdnet.csv
 
 
                         ###################################
@@ -158,6 +155,7 @@ for (i in 1:length(Listen$Selection)) {
 }
 
 
+#write.csv2(tableau_recapitulatif, "//nas-avi.paca.inrae.fr/paca-psh-users$/psh/rminguet/Documents/Thèse/Analyse/Communauté_printemps/Indice de confiance par espèces/Tableau validation/analyse_OK/Mesange bleue/Mesangebleue_OK.csv")
 
                                         ###########################################
                                         #                  Etape 5                #
@@ -167,7 +165,7 @@ for (i in 1:length(Listen$Selection)) {
 ################################################################################################
 # Si tableau de test d'écoute déjà disponible :
 # tableau recapitulatif<-read.csv("chemin_dacces_fichier_ecoute.csv", header=TRUE, sep=";)
-# Un exemple de la structure du tableau attendu dans cette partie est présente sur le github :
+# Un exemple de la structure du tableau attendu dans cette partie est présente sur le github : https://github.com/raphael-minguet/Script_test_precision_Birdnet/blob/main/Exemple_structure_tableau_de_donnees_test_ecoute.csv
 ################################################################################################
 
 
@@ -179,14 +177,8 @@ tableau_recapitulatif <- tableau_recapitulatif %>%
     Vrai_Positif == "doute" ~ 2,
     TRUE ~ NA_real_  # Pour gérer les valeurs manquantes ou autres valeurs non prévues
   ))
-#On enlève maintenant les doutes (Decider ici si vous voulez les fusionner (avec oui ou non) ou les ignorer)
-tableau_recapitulatif <- tableau_recapitulatif %>%
-  filter(Vrai_Positif != "doute")
 
-#On définit la colonne Vrai_positif_binaire comme étant binaire
-tableau_recapitulatif$vrai_positif_binaire <- factor(tableau_recapitulatif$vrai_positif_binaire,levels = c(0, 1))
-
-#Info sur les test effectuer
+#Info sur les test effectuées
 print(
   tableau_recapitulatif %>%
     summarise(
@@ -196,6 +188,14 @@ print(
     ),
   row.names = FALSE
 )
+
+#On enlève maintenant les doutes (Decider ici si vous voulez les fusionner (avec oui ou non) ou les ignorer)
+tableau_recapitulatif <- tableau_recapitulatif %>%
+  filter(Vrai_Positif != "doute")
+
+#On définit la colonne Vrai_positif_binaire comme étant binaire
+tableau_recapitulatif$vrai_positif_binaire <- factor(tableau_recapitulatif$vrai_positif_binaire,levels = c(0, 1))
+
 
 
 #Mise en place du modèle
@@ -226,7 +226,6 @@ Proba_bonne_reponse_choisit <- 0.90       #Choisit la probabilité de bonne rép
 indice_seuil_espece_cible <- (log(Proba_bonne_reponse_choisit / (1 - Proba_bonne_reponse_choisit)) - Modele_indice_seuil$coefficients[1]) / 
   Modele_indice_seuil$coefficients[2]
 indice_seuil_espece_cible
-
 
 
 
