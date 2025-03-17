@@ -1,7 +1,6 @@
 library(plyr)
 library(readr)
 library(dplyr)
-#library(sound)
 library(seewave)
 library(tuneR)
 library(lubridate)
@@ -11,9 +10,13 @@ library(lubridate)
 source("//nas-avi.paca.inrae.fr/paca-psh-users$/psh/rminguet/Documents/Thèse/Analyse/Script_generaux/Fonction/spectrogramCustomFunction.R")
 #Modifier le chemin d'accès précédent vers l'endroit où a été stocké la fonction
 
-#définition du lecteur audio 
+#définition du lecteur audio sur windows
 tuneR::setWavPlayer('vlc.exe --play-and-exit')
 getWavPlayer()
+
+#définition du lecteur audio sur linux
+#AtuneR::setWavPlayer('/usr/bin/aplay')
+#getWavPlayer()
 
 #définition de la localisation pour les conversions de dates
 Sys.setlocale("LC_TIME", "C")
@@ -34,6 +37,8 @@ Sys.setlocale("LC_TIME", "C")
 #Ici fichier de compilation des détections de 2023
 
 FullDS2024<-read.csv("Chemin_d_acces.csv", header=TRUE, sep=";")
+FullDS2024<-read.csv("N:/tdelattre/data/TERRAIN_2024_NAS/PRINTEMPS/compilation_birdnet_s1S10.csv", header=TRUE, sep=";")
+
 
 #mise en forme correcte du fichier
 FullDS2024$Confidence <- gsub(",", ".", FullDS2024$Confidence)
@@ -62,11 +67,11 @@ rootdir="N:/tdelattre/data/TERRAIN_2024_NAS/PRINTEMPS/"
 
 # ajout du nom du dossier où est stocké l'enregistrement (ajout de la session et de la parcelle dans notre cas)
 FullDS2024$mydir=paste(rootdir,FullDS2024$session,"/",FullDS2024$parcelle,"/Data2/",sep="")
-head(FullDS2024$mydir)
+head(FullDS2024$mydir)    # ici : "N:/tdelattre/data/TERRAIN_2024_NAS/PRINTEMPS/S1/177/Data2/"
 
 # ajout du nom de fichier audio dans le jeu de données en mémoire
 FullDS2024$Begin.File=paste(substr(FullDS2024$fileName,start = 0,stop=25),"wav",sep="")
-head(FullDS2024$Begin.File)
+head(FullDS2024$Begin.File)   # ici : "SMU05114_20240313_112531.wav"
 
 
 
@@ -81,7 +86,7 @@ head(FullDS2024$Begin.File)
 Listen <- FullDS2024 %>%
   filter(Common.Name == "Mésange charbonnière") %>%       #définir ici le nom d'espèce
   group_by(intervalle_confiance) %>%
-  slice_sample(n = 10, replace = FALSE) %>%       #définir ici le nombre de tirage aléatoire
+  slice_sample(n = 3, replace = FALSE) %>%       #définir ici le nombre de tirage aléatoire
   ungroup()
 
 #Vérification des indices de confiance
@@ -102,11 +107,11 @@ fenetre<-1   #permet d'avoir les abords du chant et pas que les 3 secondes
 
 # Création d'un dataframe pour stocker les réponses
 tableau_recapitulatif <- data.frame(Enregistrement = numeric(length(Listen$Selection)),
-                             Chemin_acces = numeric(length(Listen$Selection)),
-                             Begin.Time..s. = numeric(length(Listen$Selection)),
-                             End.Time..s. = numeric(length(Listen$Selection)),
-                             Ind_confiance = numeric(length(Listen$Selection)),
-                             Vrai_Positif = numeric(length(Listen$Selection)))
+                                    Chemin_acces = numeric(length(Listen$Selection)),
+                                    Begin.Time..s. = numeric(length(Listen$Selection)),
+                                    End.Time..s. = numeric(length(Listen$Selection)),
+                                    Ind_confiance = numeric(length(Listen$Selection)),
+                                    Vrai_Positif = numeric(length(Listen$Selection)))
 
 
 for (i in 1:length(Listen$Selection)) {
@@ -125,6 +130,9 @@ for (i in 1:length(Listen$Selection)) {
   
   # Création du spectrogramme
   spectroCustom(selection)  #fonction du spectro dispo sur le github de Thomas Delattre : https://github.com/tdelattre/spectroCustom
+  
+  # Pause pour laisser le au spectrogramme le temps d'être affiché (à activer si l'ordi à tendance à lancer le son avant le spectro)
+  #Sys.sleep(5)
   
   # Ecoute de l'enregistrement
   play(selection, getWavPlayer())
@@ -179,13 +187,15 @@ tableau_recapitulatif <- tableau_recapitulatif %>%
 tableau_recapitulatif$vrai_positif_binaire <- factor(tableau_recapitulatif$vrai_positif_binaire,levels = c(0, 1))
 
 #Info sur les test effectuer
-tableau_recapitulatif %>%
-  summarise(
-    faux_positifs = sum(Vrai_Positif == "non"),
-    vrais_positifs = sum(Vrai_Positif == "oui"),
-    doutes = sum(Vrai_Positif == "doute")
-  )
-
+print(
+  tableau_recapitulatif %>%
+    summarise(
+      faux_positifs = sum(Vrai_Positif == "non"),
+      vrais_positifs = sum(Vrai_Positif == "oui"),
+      doutes = sum(Vrai_Positif == "doute")
+    ),
+  row.names = FALSE
+)
 
 
 #Mise en place du modèle
@@ -197,16 +207,15 @@ Modele_indice_seuil <- glm(vrai_positif_binaire ~ Ind_confiance,
 
 #représentation graphique des résultats d'écoute pour l'espèce en question
 tableau_recapitulatif$predicted_prob <- predict(Modele_indice_seuil, type = "response")
-ggplot(tableau_recapitulatif, aes(x = Ind_confiance, y = as.numeric(vrai_positif_binaire) - 1)) +  # Décalage pour la position des points
-  geom_point(aes(color = as.factor(vrai_positif_binaire)), alpha = 0.6, shape = 1, size = 2, fill = NA) +  # Points vides
-  stat_smooth(method = "glm", method.args = list(family = "binomial"), se = TRUE, color = "blue") +  # Courbe de régression logistique
-  xlab("Indice de confiance") +  # Label de l'axe X
-  ylab("Probabilité de vrai positif") +  # Label de l'axe Y
-  ggtitle("Probabilité de vrai positif en fonction de l'indice de confiance") +  # Titre du graphique
-  theme_classic() +  # Thème classique
-  scale_y_continuous(breaks = seq(0, 1, by = 0.2),  # Échelle de l'axe y de 0 à 1 par intervalles de 0.2
-                     labels = seq(0, 1, by = 0.2)) +  
-  scale_color_manual(values = c("red", "blue"), labels = c("Mauvaises réponses", "Bonnes réponses")) +  # Couleurs pour les points
+ggplot(tableau_recapitulatif, aes(x = Ind_confiance, y = as.numeric(vrai_positif_binaire) - 1)) +  
+  geom_point(aes(color = as.factor(vrai_positif_binaire)), alpha = 0.6, shape = 1, size = 2, fill = NA) +  
+  stat_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE, color = "blue") +  # Suppression de l'ombre grise
+  xlab("Indice de confiance") +  
+  ylab("Probabilité de vrai positif") +  
+  ggtitle("Probabilité de vrai positif en fonction de l'indice de confiance") +  
+  theme_classic() +  
+  scale_y_continuous(breaks = seq(0, 1, by = 0.2), labels = seq(0, 1, by = 0.2)) +  
+  scale_color_manual(values = c("red", "blue"), labels = c("Mauvaises réponses", "Bonnes réponses")) +  
   theme(legend.title = element_blank())
 
 
